@@ -3,8 +3,24 @@ from pydantic import BaseModel
 from db import run_sql
 from llm import generate_sql
 from fastapi import HTTPException
+from fastapi.middleware.cors import CORSMiddleware
+import psycopg2
+import os
+
+DATABASE_URL = os.getenv("DATABASE_URL")
+
+def get_db_connection():
+    return psycopg2.connect(DATABASE_URL)
 
 app = FastAPI()
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],  # for now allow all
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 class QueryRequest(BaseModel):
     query: str
@@ -132,9 +148,16 @@ def expand_node(node_id: str):
 
 
 @app.get("/graph/sample")
-def sample_nodes():
-    return {
-        "sales_orders": run_sql("SELECT sales_order FROM sales_orders"),
-        "billing_documents": run_sql("SELECT billing_document FROM billing_documents"),
-        "journal_entries": run_sql("SELECT accounting_document FROM journal_entries")
-    }
+def get_sample():
+    conn = get_db_connection()
+    cur = conn.cursor()
+
+    cur.execute("""
+        SELECT billing_document
+        FROM billing_documents
+        LIMIT 20
+    """)
+
+    rows = cur.fetchall()
+
+    return [{"billing_document": r[0]} for r in rows]
