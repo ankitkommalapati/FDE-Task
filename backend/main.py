@@ -45,28 +45,35 @@ def format_response(user_query, result):
         chat_history.append({"role": "user", "content": user_query})
 
         prompt = f"""
-User query: {user_query}
-SQL Result: {result}
+User Query: {user_query}
 
-Give a clean, human-friendly response.
+SQL Result:
+{result}
+
+Instructions:
+- Be concise and structured
+- Use bullet points
+- Highlight important numbers using **bold**
+- Do NOT explain SQL
+- Do NOT add unnecessary commentary
+
+Answer:
 """
 
-        messages = chat_history + [{"role": "user", "content": prompt}]
-
         response = client.chat.completions.create(
-            model="llama3-8b-8192",
-            messages=messages,
+            model="llama-3.1-8b-instant",
+            messages=[{"role": "user", "content": prompt}],
         )
 
-        answer = response.choices[0].message.content
+        answer = response.choices[0].message.content.strip()
 
         chat_history.append({"role": "assistant", "content": answer})
 
         return answer
 
     except Exception as e:
-        return f"I found {len(result)} results."
-
+        print("LLM ERROR:", e)
+        return f"I found {len(result)} result(s)."
 
 @app.post("/query")
 def query_data(payload: dict):
@@ -90,7 +97,7 @@ def query_data(payload: dict):
 
         answer = format_response(user_query, rows)
 
-        return {"answer": answer}
+        return {"answer": answer, "sql": sql}
 
     except Exception as e:
         return {"error": str(e)}
