@@ -3,7 +3,7 @@ import ForceGraph2D from "react-force-graph-2d";
 import axios from "axios";
 import ReactMarkdown from "react-markdown";
 
-const BACKEND = "http://127.0.0.1:8000";
+const BACKEND = "https://fde-task-fjv5.onrender.com";
 
 function App() {
   const [graph, setGraph] = useState({ nodes: [], links: [] });
