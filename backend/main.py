@@ -6,8 +6,13 @@ from fastapi import HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 import psycopg2
 import os
+from groq import Groq
 
 DATABASE_URL = os.getenv("DATABASE_URL")
+
+client = Groq(api_key=os.getenv("GROQ_API_KEY"))
+
+chat_history = []
 
 def get_db_connection():
     return psycopg2.connect(DATABASE_URL)
@@ -29,33 +34,66 @@ def is_valid_query(query: str):
     banned = ["drop", "delete", "update", "insert"]
     return not any(word in query.lower() for word in banned)
 
-@app.post("/query")
-def query_data(req: QueryRequest):
-    user_query = req.query
 
-    # Guardrail: domain check
-    if any(x in user_query.lower() for x in ["weather", "poem", "joke"]):
-        return {"error": "This system is designed to answer dataset-related questions only."}
+def format_response(user_query, result):
+    global chat_history
 
-    sql = generate_sql(user_query)
-
-    if "INVALID_QUERY" in sql:
-        return {"error": "Invalid query for this dataset."}
-
-    if not is_valid_query(sql):
-        return {"error": "Unsafe query detected."}
+    if not result:
+        return "I couldn’t find any matching data."
 
     try:
-        result = run_sql(sql)
-        return {
-            "sql": sql,
-            "result": result
-        }
+        chat_history.append({"role": "user", "content": user_query})
+
+        prompt = f"""
+User query: {user_query}
+SQL Result: {result}
+
+Give a clean, human-friendly response.
+"""
+
+        messages = chat_history + [{"role": "user", "content": prompt}]
+
+        response = client.chat.completions.create(
+            model="llama3-8b-8192",
+            messages=messages,
+        )
+
+        answer = response.choices[0].message.content
+
+        chat_history.append({"role": "assistant", "content": answer})
+
+        return answer
+
     except Exception as e:
-        return {
-            "error": str(e),
-            "sql": sql
-        }
+        return f"I found {len(result)} results."
+
+
+@app.post("/query")
+def query_data(payload: dict):
+    try:
+        user_query = payload.get("query")
+
+        if not user_query:
+            return {"error": "Query is required"}
+
+        sql = generate_sql(user_query)
+
+        conn = get_db_connection()
+        cur = conn.cursor()
+
+        cur.execute(sql)
+        columns = [desc[0] for desc in cur.description]
+        rows = [dict(zip(columns, row)) for row in cur.fetchall()]
+
+        cur.close()
+        conn.close()
+
+        answer = format_response(user_query, rows)
+
+        return {"answer": answer}
+
+    except Exception as e:
+        return {"error": str(e)}
 
 
 @app.get("/graph/node/{node_id}")
@@ -149,15 +187,19 @@ def expand_node(node_id: str):
 
 @app.get("/graph/sample")
 def get_sample():
-    conn = get_db_connection()
-    cur = conn.cursor()
+    try:
+        conn = get_db_connection()
+        cur = conn.cursor()
 
-    cur.execute("""
-        SELECT billing_document
-        FROM billing_documents
-        LIMIT 20
-    """)
+        cur.execute("SELECT billing_document FROM billing_documents LIMIT 5")
+        rows = cur.fetchall()
 
-    rows = cur.fetchall()
+        nodes = [{"id": str(r[0]), "label": str(r[0])} for r in rows]
 
-    return [{"billing_document": r[0]} for r in rows]
+        cur.close()
+        conn.close()
+
+        return {"nodes": nodes, "edges": []}
+
+    except Exception as e:
+        return {"error": str(e)}

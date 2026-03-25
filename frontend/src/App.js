@@ -6,22 +6,22 @@ const BACKEND = "http://127.0.0.1:8000";
 
 function App() {
   const [graph, setGraph] = useState({ nodes: [], links: [] });
-  const [query, setQuery] = useState("");
-  const [result, setResult] = useState(null);
+  const [input, setInput] = useState("");
+  const [messages, setMessages] = useState([]);
 
-  // 🔥 Load initial graph
+  // 🔥 Load graph
   useEffect(() => {
     axios.get(`${BACKEND}/graph/sample`).then((res) => {
-      const nodes = res.data.map((d) => ({
-        id: d.billing_document,
-        type: "Billing"
+      const nodes = res.data.nodes.map((n) => ({
+        id: n.id,
+        type: n.type
       }));
 
       setGraph({ nodes, links: [] });
     });
   }, []);
 
-  // 🔥 Expand node
+  // 🔥 Expand graph
   const handleNodeClick = async (node) => {
     const res = await axios.get(`${BACKEND}/graph/expand/${node.id}`);
 
@@ -41,50 +41,100 @@ function App() {
     }));
   };
 
-  // 🔥 Query API
-  const handleQuery = async () => {
-    const res = await axios.post(`${BACKEND}/query`, { query });
-    setResult(res.data);
+  // 🔥 Send query (CHAT)
+  const sendQuery = async () => {
+    if (!input) return;
+
+    const userMsg = { role: "user", text: input };
+    setMessages((prev) => [...prev, userMsg]);
+
+    try {
+      const res = await axios.post(`${BACKEND}/query`, {
+        query: input
+      });
+
+      const botMsg = {
+        role: "bot",
+        text: res.data.answer || res.data.error
+      };
+
+      setMessages((prev) => [...prev, botMsg]);
+
+    } catch (err) {
+      setMessages((prev) => [
+        ...prev,
+        { role: "bot", text: "Something went wrong." }
+      ]);
+    }
+
+    setInput("");
   };
 
   return (
     <div style={{ display: "flex", height: "100vh" }}>
       
       {/* LEFT: GRAPH */}
-      <div style={{ flex: 2, borderRight: "1px solid #ddd" }}>
+      <div style={{ flex: 3 }}>
         <ForceGraph2D
           graphData={graph}
+          width={window.innerWidth * 0.7}
+          height={window.innerHeight}
           nodeLabel="id"
           onNodeClick={handleNodeClick}
         />
       </div>
 
-      {/* RIGHT: CHAT PANEL */}
-      <div style={{ flex: 1, padding: "20px" }}>
-        <h3>Query</h3>
+      {/* RIGHT: CHAT */}
+      <div
+        style={{
+          flex: 1,
+          display: "flex",
+          flexDirection: "column",
+          borderLeft: "1px solid #ccc"
+        }}
+      >
+        {/* CHAT HISTORY */}
+        <div style={{ flex: 1, overflowY: "auto", padding: "10px" }}>
+          {messages.map((msg, i) => (
+            <div
+              key={i}
+              style={{
+                textAlign: msg.role === "user" ? "right" : "left",
+                margin: "10px"
+              }}
+            >
+              <div
+                style={{
+                  display: "inline-block",
+                  padding: "10px",
+                  borderRadius: "10px",
+                  background: msg.role === "user" ? "#333" : "#eee",
+                  color: msg.role === "user" ? "white" : "black"
+                }}
+              >
+                {msg.text}
+              </div>
+            </div>
+          ))}
+        </div>
 
-        <input
-          style={{ width: "100%", padding: "10px" }}
-          value={query}
-          onChange={(e) => setQuery(e.target.value)}
-          placeholder="Ask something..."
-        />
+        {/* INPUT BAR */}
+        <div style={{ padding: "10px", borderTop: "1px solid #ccc" }}>
+          <input
+            value={input}
+            onChange={(e) => setInput(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") sendQuery();
+            }}
+            placeholder="Ask something..."
+            style={{ width: "80%", padding: "10px" }}
+          />
 
-        <button onClick={handleQuery} style={{ marginTop: "10px" }}>
-          Ask
-        </button>
-
-        {result && (
-          <div style={{ marginTop: "20px" }}>
-            <h4>SQL</h4>
-            <pre>{result.sql}</pre>
-
-            <h4>Result</h4>
-            <pre>{JSON.stringify(result.result, null, 2)}</pre>
-          </div>
-        )}
+          <button onClick={sendQuery} style={{ marginLeft: "10px" }}>
+            Send
+          </button>
+        </div>
       </div>
-
     </div>
   );
 }
